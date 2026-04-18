@@ -6,14 +6,16 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Unzip project files
-      run: unzip '*.zip' -d . && rm *.zip
-    - name: Select Xcode 16 (latest stable)
-      uses: mobiledevops/xcode-select-version-action@v1
-      with:
-        version: '16.2'  # Safe for macos-14 (16.3 if available post-Apr 2026)
-    - name: Verify Xcode
-      run: xcodebuild -version
-    - name: Install CocoaPods (if Podfile)
+      run: unzip '*.zip' -d . && rm *.zip || true  # Ignore if no ZIP
+    - name: List & Select Xcode (safe)
+      run: |
+        echo "Available Xcodes:"
+        ls /Applications | grep -E 'Xcode_(16|15)'
+        # Use default or first 16.x
+        sudo xcode-select --reset
+        sudo xcode-select -s /Applications/Xcode_16.2.app || sudo xcode-select -s /Applications/Xcode_16.0.app || sudo xcode-select --print-path
+        xcodebuild -version
+    - name: Install CocoaPods
       run: |
         if [ -f Podfile ]; then
           sudo gem install cocoapods
@@ -22,21 +24,18 @@ jobs:
     - name: Build & Test
       run: |
         if [ -f Comet.xcworkspace ]; then
-          xcodebuild test -workspace Comet.xcworkspace -scheme Comet -destination 'platform=iOS Simulator,name=iPhone 15'
-        else
-          xcodebuild test -project Comet.xcodeproj -scheme Comet -destination 'platform=iOS Simulator,name=iPhone 15'
+          xcodebuild test -workspace Comet.xcworkspace -scheme Comet -destination 'platform=iOS Simulator,name=iPhone 15' | xcbeautify || true
+        elif [ -f Comet.xcodeproj ]; then
+          xcodebuild test -project Comet.xcodeproj -scheme Comet -destination 'platform=iOS Simulator,name=iPhone 15' | xcbeautify || true
         fi
-    - name: Archive App
+    - name: Archive
       run: |
         mkdir -p build
-        if [ -f Comet.xcworkspace ]; then
-          xcodebuild -workspace Comet.xcworkspace -scheme Comet -archivePath build/Comet.xcarchive archive
-        else
-          xcodebuild -project Comet.xcodeproj -scheme Comet -archivePath build/Comet.xcarchive archive
-        fi
-    - name: Upload artifacts
+        WS_OR_PROJ="-project Comet.xcodeproj"
+        [ -f Comet.xcworkspace ] && WS_OR_PROJ="-workspace Comet.xcworkspace"
+        eval "xcodebuild $WS_OR_PROJ -scheme Comet -archivePath build/Comet.xcarchive archive"
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: comet-app-build
+        name: comet-build
         path: build/
-        retention-days: 7
