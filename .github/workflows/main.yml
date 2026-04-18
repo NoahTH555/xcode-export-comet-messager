@@ -5,15 +5,18 @@ jobs:
     runs-on: macos-14
     steps:
     - uses: actions/checkout@v4
-    - name: Unzip project files
-      run: unzip '*.zip' -d . && rm *.zip || true  # Ignore if no ZIP
-    - name: List & Select Xcode (safe)
+    - name: Unzip & Debug Files
       run: |
-        echo "Available Xcodes:"
-        ls /Applications | grep -E 'Xcode_(16|15)'
-        # Use default or first 16.x
+        unzip -l '*.zip'  # List ZIP contents
+        unzip '*.zip' -d . && rm *.zip || true
+        echo "Root files:"
+        ls -la
+        echo "Subdirs:"
+        find . -name "*.xcodeproj" -o -name "*.xcworkspace" | head -5 || true
+    - name: Select Xcode
+      run: |
         sudo xcode-select --reset
-        sudo xcode-select -s /Applications/Xcode_16.2.app || sudo xcode-select -s /Applications/Xcode_16.0.app || sudo xcode-select --print-path
+        sudo xcode-select -s /Applications/Xcode_16.2.app || sudo xcode-select -s /Applications/Xcode_16.0.app
         xcodebuild -version
     - name: Install CocoaPods
       run: |
@@ -21,19 +24,24 @@ jobs:
           sudo gem install cocoapods
           pod install
         fi
-    - name: Build & Test
+    - name: Build & Test (in project dir)
       run: |
+        cd Comet || cd "Comet Messager" || cd Comet-main || exit 1  # Common ZIP folder names
+        ls -la *.xcodeproj *.xcworkspace || exit 1
         if [ -f Comet.xcworkspace ]; then
-          xcodebuild test -workspace Comet.xcworkspace -scheme Comet -destination 'platform=iOS Simulator,name=iPhone 15' | xcbeautify || true
-        elif [ -f Comet.xcodeproj ]; then
-          xcodebuild test -project Comet.xcodeproj -scheme Comet -destination 'platform=iOS Simulator,name=iPhone 15' | xcbeautify || true
+          xcodebuild test -workspace Comet.xcworkspace -scheme Comet -destination 'platform=iOS Simulator,name=iPhone 15'
+        else
+          xcodebuild test -project Comet.xcodeproj -scheme Comet -destination 'platform=iOS Simulator,name=iPhone 15'
         fi
-    - name: Archive
+    - name: Archive (in project dir)
       run: |
+        cd Comet || cd "Comet Messager" || cd Comet-main || exit 1
         mkdir -p build
-        WS_OR_PROJ="-project Comet.xcodeproj"
-        [ -f Comet.xcworkspace ] && WS_OR_PROJ="-workspace Comet.xcworkspace"
-        eval "xcodebuild $WS_OR_PROJ -scheme Comet -archivePath build/Comet.xcarchive archive"
+        if [ -f Comet.xcworkspace ]; then
+          xcodebuild -workspace Comet.xcworkspace -scheme Comet -archivePath build/Comet.xcarchive archive
+        else
+          xcodebuild -project Comet.xcodeproj -scheme Comet -archivePath build/Comet.xcarchive archive
+        fi
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
