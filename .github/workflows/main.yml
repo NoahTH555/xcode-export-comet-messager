@@ -1,57 +1,56 @@
-name: Build Comet Xcode App from ZIP
+name: Build Comet Messager App
 on: [push]
 jobs:
   build:
     runs-on: macos-14
     steps:
     - uses: actions/checkout@v4
-    - name: Unzip & Flatten
+    - name: Unzip Comet-Messager.zip
       run: |
-        unzip '*.zip' -d temp_extract -q && rm *.zip || true
-        # Flatten: move all contents to root (handles subdirs)
-        find temp_extract -mindepth 1 -maxdepth 1 -exec mv {} . \;
-        rm -rf temp_extract
-        echo "=== FILES AFTER FLATTEN ==="
-        ls -la | grep -E "(xcodeproj|xcworkspace|project|pods)"
+        unzip "Comet-Messager.zip" -d . -q -o && rm "Comet-Messager.zip"
+        echo "=== FILES AFTER UNZIP ==="
+        ls -la | head -20
+        echo "=== XCODE PROJECTS ==="
+        find . -name "*.xcodeproj" -o -name "*.xcworkspace" | head -5 || echo "None"
     - name: Setup Xcode
       run: |
-        sudo xcode-select --reset
         sudo xcode-select -s /Applications/Xcode_16.2.app || sudo xcode-select -s /Applications/Xcode_16.0.app
         xcodebuild -version
-    - name: Install Pods
+    - name: Install CocoaPods
       run: |
         if [ -f Podfile ]; then
           sudo gem install cocoapods
-          pod install
+          pod install --repo-update
         fi
-    - name: Find & Build Project
+    - name: Build & Test Comet
       run: |
+        # Find & cd to project dir
         PROJ_PATH=$(find . -name "Comet.xcodeproj" -o -name "Comet.xcworkspace" | head -1)
-        [ -z "$PROJ_PATH" ] && { echo "ERROR: No Comet project found! Check ZIP contents."; ls -la; exit 1; }
-        PROJ_DIR=$(dirname "$PROJ_PATH")
-        echo "Found project: $PROJ_PATH (dir: $PROJ_DIR)"
-        cd "$PROJ_DIR"
-        ls -la *.xcodeproj *.xcworkspace
+        if [ -z "$PROJ_PATH" ]; then
+          echo "No Comet project—listing all:"
+          find . -name "*.xcodeproj" -o -name "*.xcworkspace"
+          exit 1
+        fi
+        cd "$(dirname "$PROJ_PATH")"
+        echo "Building in: $(pwd)"
+        ls -la
         if [[ "$PROJ_PATH" == *.xcworkspace ]]; then
-          xcodebuild test -workspace Comet.xcworkspace -scheme Comet -destination 'platform=iOS Simulator,name=iPhone 15'
+          xcodebuild test -workspace "$(basename "$PROJ_PATH")" -scheme Comet -destination 'platform=iOS Simulator,name=iPhone 15'
         else
-          xcodebuild test -project Comet.xcodeproj -scheme Comet -destination 'platform=iOS Simulator,name=iPhone 15'
+          xcodebuild test -project "$(basename "$PROJ_PATH")" -scheme Comet -destination 'platform=iOS Simulator,name=iPhone 15'
         fi
     - name: Archive
       run: |
         PROJ_PATH=$(find . -name "Comet.xcodeproj" -o -name "Comet.xcworkspace" | head -1)
-        PROJ_DIR=$(dirname "$PROJ_PATH")
-        cd "$PROJ_DIR"
+        cd "$(dirname "$PROJ_PATH")"
         mkdir -p build
         if [[ "$PROJ_PATH" == *.xcworkspace ]]; then
-          xcodebuild -workspace Comet.xcworkspace -scheme Comet -archivePath build/Comet.xcarchive archive
+          xcodebuild -workspace "$(basename "$PROJ_PATH")" -scheme Comet -archivePath build/Comet.xcarchive archive
         else
-          xcodebuild -project Comet.xcodeproj -scheme Comet -archivePath build/Comet.xcarchive archive
+          xcodebuild -project "$(basename "$PROJ_PATH")" -scheme Comet -archivePath build/Comet.xcarchive archive
         fi
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: comet-build
-        path: |
-          build/
-          **/*.xcarchive
+        name: comet-messager-build
+        path: build/
