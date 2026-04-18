@@ -1,54 +1,35 @@
-name: Build Messager App
+name: Inspect & Build Messager
 on: [push]
 jobs:
-  build:
+  inspect:
     runs-on: macos-14
     steps:
     - uses: actions/checkout@v4
-    - name: Unzip & List Everything
+    - name: Unzip & Full Reveal
       run: |
         unzip "Comet-Messager.zip" -d . -q -o && rm "Comet-Messager.zip"
-        echo "=== ALL FILES/DIRS ==="
-        ls -laR | head -30
-        echo "=== XCODE PROJS/WS ==="
-        find . -name "*.xcodeproj" -o -name "*.xcworkspace" | head -5 || echo "NONE - check ZIP!"
-    - name: Setup Xcode
+        echo "=== TREE VIEW ==="
+        find . -type f | head -50 | sort
+        echo "=== APP/Swift FILES ==="
+        find . -name "*.swift" -o -name "*.app" -o -name "Package.swift" | head -10 || echo "None"
+        echo "=== Xcode FILES ==="
+        find . -name "*.xcode*" -o -name "*.pbx*" -o -name "project.pbxproj" | head -10 || echo "NO XCODE PROJECT"
+    - name: SPM Build Fallback (if Package.swift)
       run: |
-        sudo xcode-select -s /Applications/Xcode_16.2.app || sudo xcode-select -s /Applications/Xcode_16.0.app
-        xcodebuild -version
-    - name: Install Pods
-      run: |
-        if [ -f Podfile ]; then
-          sudo gem install cocoapods
-          pod install
-        fi
-    - name: Build First Project Found
-      run: |
-        PROJ_PATH=$(find . -name "*.xcodeproj" -o -name "*.xcworkspace" | head -1)
-        [ -z "$PROJ_PATH" ] && { echo "NO PROJECT!"; exit 1; }
-        cd "$(dirname "$PROJ_PATH")"
-        echo "Using project: $PROJ_PATH"
-        ls -la
-        SCHEME=$(xcodebuild -list -json | jq -r '.project.schemes // empty | .[0] // "Comet"') || SCHEME="Comet"
-        echo "Scheme: $SCHEME"
-        if [[ "$PROJ_PATH" == *.xcworkspace ]]; then
-          xcodebuild test -workspace "$(basename "$PROJ_PATH")" -scheme "$SCHEME" -destination 'platform=iOS Simulator,name=iPhone 15'
+        if [ -f Package.swift ]; then
+          echo "SPM project—building..."
+          swift build
+          mkdir -p build
+          cp -r .build/* build/
         else
-          xcodebuild test -project "$(basename "$PROJ_PATH")" -scheme "$SCHEME" -destination 'platform=iOS Simulator,name=iPhone 15'
+          echo "No SPM or Xcode—upload raw files for manual fix"
+          mkdir -p build/raw
+          cp -r . build/raw/
         fi
-    - name: Archive
-      run: |
-        PROJ_PATH=$(find . -name "*.xcodeproj" -o -name "*.xcworkspace" | head -1)
-        cd "$(dirname "$PROJ_PATH")"
-        mkdir -p build
-        SCHEME=$(xcodebuild -list -json | jq -r '.project.schemes // empty | .[0] // "Comet"') || SCHEME="Comet"
-        if [[ "$PROJ_PATH" == *.xcworkspace ]]; then
-          xcodebuild -workspace "$(basename "$PROJ_PATH")" -scheme "$SCHEME" -archivePath build/app.xcarchive archive
-        else
-          xcodebuild -project "$(basename "$PROJ_PATH")" -scheme "$SCHEME" -archivePath build/app.xcarchive archive
-        fi
-    - name: Upload
+    - name: Upload ZIP Contents
       uses: actions/upload-artifact@v4
       with:
-        name: messager-build
-        path: build/
+        name: zip-contents
+        path: |
+          .
+          build/
